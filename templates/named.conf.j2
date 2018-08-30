@@ -1,0 +1,30 @@
+// vim:set ts=4 sw=4 et:
+
+options {
+  directory "/var/named";
+  listen-on {
+{% for address in listen_on %}
+    {{ address }};
+{% endfor %}
+  };
+};
+
+zone "." IN {
+  type hint;
+  file "named.root";
+};
+
+{% for zone in zones %}
+zone "{{ zone }}." IN{
+  type master;
+  file "zone.{{ zone }}";
+};
+
+{% endfor %}
+{% for pointer in reverse_pointers %}
+zone "{{ pointer.split('.')|reverse|join('.') }}.in-addr.arpa" IN {
+  type master;
+  file "revp.{{ pointer}}";
+};
+
+{% endfor %}

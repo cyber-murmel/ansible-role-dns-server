@@ -1,0 +1,76 @@
+---
+- name: Installing necessary packages
+  package:
+    name: "{{ item }}"
+    state: latest
+  with_items: "{{ packages }}"
+  become: yes
+  tags: install
+- name: Deploying named config
+  template:
+    dest: /etc/named.conf
+    group: named
+    mode: '640'
+    owner: root
+    src: named.conf.j2
+    validate: /usr/bin/named-checkconf %s
+  become: yes
+- name: Downloading root nameservers zones
+  get_url:
+    dest: /var/named/named.root
+    force: yes
+    group: named
+    mode: '640'
+    owner: root
+    url: ftp://ftp.internic.net/domain/named.root
+  become: yes
+- name: Deploying zones
+  copy:
+    dest: "/var/named/zone.{{ item }}"
+    force: yes
+    group: named
+    mode: '640'
+    owner: root
+    src: "zone.{{ item }}"
+    validate: "/usr/bin/named-checkzone {{ item }}. %s"
+  become: yes
+  with_items: "{{ zones }}"
+- name: Deploying reverse pointers
+  copy:
+    dest: "/var/named/revp.{{ item }}"
+    force: yes
+    group: named
+    mode: '640'
+    owner: root
+    src: "revp.{{ item }}"
+    validate: "/usr/bin/named-checkzone {{ item.split('.')|reverse|join('.') }}.in-addr.arpa. %s"
+  become: yes
+  with_items: "{{ reverse_pointers }}"
+- name: Editing dnsmaqs config
+  lineinfile:
+    line: "{{ item.line }}"
+    path: /etc/dnsmasq.conf
+    regexp: "{{ item.regexp }}"
+    validate: '/usr/bin/dnsmasq --test --conf-file=%s'
+  with_items:
+    - line: port=0
+      regexp: "^port="
+    - line: dhcp-option=option:dns-server,10.0.0.1
+      regexp: "^dhcp-option=option:dns-server"
+  register: dnsmasq_conf
+  become: yes
+- name: Restarting dnsmasq service
+  service:
+    name: dnsmasq
+    state: restarted
+  when: dnsmasq_conf.changed
+  become: yes
+- name: Enabling services and start if not running
+  service:
+    name: named
+    state: started
+    enabled: yes
+  with_items:
+    - named
+  become: yes
+  tags: iptables
